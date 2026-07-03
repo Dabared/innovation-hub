@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Post an Idea · Innovation Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/store.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = renderShell({ activePage:'idea-post.html', eyebrow:'Contribute', title:'Post an Innovation Idea' });
+</script>
+
+
+<script>
+let editingId = null;
+
+function categoryOptions(selected){
+  return STORE.categories().all().map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${escapeHtml(c.name)}</option>`).join('');
+}
+
+function renderPage(){
+  const myIdeas = STORE.ideas().where(i=>i.authorId===user.id).sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));
+
+  document.getElementById('content-mount').innerHTML = `
+    <div style="display:grid;grid-template-columns:1.15fr 0.85fr;gap:20px;align-items:start;">
+      <div class="card card-pad">
+        <div class="panel-head">
+          <div><h3 id="form-title">New idea</h3><p>Fields marked * are required. Save a draft any time, or post it for everyone to see and the committee to review.</p></div>
+        </div>
+        <form id="idea-form" novalidate>
+          <input type="hidden" id="idea-id">
+          <div class="field" id="f-title">
+            <label for="title">Idea title *</label>
+            <input class="input" id="title" placeholder="e.g. AI-assisted ticket triage for Customer Service">
+            <div class="error-text">Give your idea a short, clear title.</div>
+          </div>
+          <div class="field-row">
+            <div class="field" id="f-category">
+              <label for="category">Category *</label>
+              <select class="input" id="category"><option value="">Select a category</option>${categoryOptions()}</select>
+              <div class="error-text">Choose the category that fits best.</div>
+            </div>
+            <div class="field" id="f-audience">
+              <label for="audience">Target audience *</label>
+              <input class="input" id="audience" placeholder="e.g. Customer Service team, all shifts">
+              <div class="error-text">Who does this idea affect or serve?</div>
+            </div>
+          </div>
+          <div class="field" id="f-challenge">
+            <label for="challenge">Target challenge *</label>
+            <textarea class="input" id="challenge" placeholder="What organisational challenge does this address?"></textarea>
+            <div class="error-text">Describe the challenge this idea targets.</div>
+          </div>
+          <div class="field" id="f-problem">
+            <label for="problem">Current problem *</label>
+            <textarea class="input" id="problem" placeholder="What's happening today that isn't working?"></textarea>
+            <div class="error-text">Describe the current problem.</div>
+          </div>
+          <div class="field" id="f-solution">
+            <label for="solution">Proposed solution *</label>
+            <textarea class="input" id="solution" placeholder="What are you proposing, concretely?"></textarea>
+            <div class="error-text">Describe your proposed solution.</div>
+          </div>
+          <div class="field">
+            <label>Attachment</label>
+            <div class="file-drop" id="file-drop">${ICONS.paperclip} &nbsp;Click to attach a file (mock upload — stores the file name only)</div>
+            <input type="file" id="file-input" style="display:none;">
+          </div>
+
+          <div class="divider"></div>
+          <div class="gap-8" style="justify-content:flex-end;">
+            <button type="button" class="btn btn-danger" id="delete-btn" style="display:none;">${ICONS.trash} Delete</button>
+            <button type="button" class="btn btn-outline" id="draft-btn">Save as draft</button>
+            <button type="submit" class="btn btn-primary" id="post-btn">Post idea</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card card-pad">
+        <div class="panel-head"><div><h3>My ideas</h3><p>${myIdeas.length} total</p></div></div>
+        <div id="my-ideas-list">
+          ${myIdeas.length===0 ? `<div class="empty-state">${ICONS.bulb}<h3>No ideas yet</h3><p>Your drafts and submitted ideas will appear here.</p></div>` :
+          myIdeas.map(i=>`
+            <div class="card" style="padding:13px 14px;margin-bottom:10px;">
+              <div class="flex-between" style="align-items:flex-start;">
+                <div style="min-width:0;">
+                  <div class="name-strong" style="font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;">${escapeHtml(i.title)}</div>
+                  <div class="muted" style="font-size:11.5px;margin-top:2px;">${fmtDate(i.updatedAt)}</div>
+                </div>
+                <span class="pill pill-status-${i.status.toLowerCase().replace(' ','-')} hex-tag">${escapeHtml(i.status)}</span>
+              </div>
+              <div class="gap-8" style="margin-top:10px;">
+                <button class="btn btn-ghost btn-sm" onclick="loadIdea('${i.id}')">${ICONS.edit} Edit</button>
+                <button class="btn btn-ghost btn-sm" style="color:var(--rust)" onclick="deleteIdea('${i.id}')">${ICONS.trash} Delete</button>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('idea-form').addEventListener('submit', (e)=>{ e.preventDefault(); saveIdea('Submitted'); });
+  document.getElementById('draft-btn').addEventListener('click', ()=> saveIdea('Draft'));
+  document.getElementById('delete-btn').addEventListener('click', ()=>{ if(editingId) deleteIdea(editingId); });
+  document.getElementById('file-drop').addEventListener('click', ()=> document.getElementById('file-input').click());
+  document.getElementById('file-input').addEventListener('change', (e)=>{
+    const f = e.target.files[0];
+    const drop = document.getElementById('file-drop');
+    if(f){ drop.textContent = '📎 ' + f.name; drop.classList.add('has-file'); drop.dataset.filename = f.name; }
+  });
+}
+
+function clearErrors(){
+  ['title','category','audience','challenge','problem','solution'].forEach(id=>{
+    document.getElementById('f-'+id).classList.remove('invalid');
+  });
+}
+
+function validate(){
+  clearErrors();
+  const vals = {
+    title: document.getElementById('title').value.trim(),
+    category: document.getElementById('category').value,
+    audience: document.getElementById('audience').value.trim(),
+    challenge: document.getElementById('challenge').value.trim(),
+    problem: document.getElementById('problem').value.trim(),
+    solution: document.getElementById('solution').value.trim(),
+  };
+  let valid = true;
+  Object.entries(vals).forEach(([k,v])=>{
+    if(!v){ document.getElementById('f-'+k).classList.add('invalid'); valid = false; }
+  });
+  return valid ? vals : null;
+}
+
+function saveIdea(status){
+  // Draft only requires a title so users can save partial work.
+  let vals;
+  if(status === 'Draft'){
+    const title = document.getElementById('title').value.trim();
+    if(!title){ document.getElementById('f-title').classList.add('invalid'); toast('Give your draft a title before saving.', 'error'); return; }
+    vals = {
+      title,
+      category: document.getElementById('category').value,
+      audience: document.getElementById('audience').value.trim(),
+      challenge: document.getElementById('challenge').value.trim(),
+      problem: document.getElementById('problem').value.trim(),
+      solution: document.getElementById('solution').value.trim(),
+    };
+  } else {
+    vals = validate();
+    if(!vals){ toast('Please complete all required fields.', 'error'); return; }
+  }
+
+  const attachmentName = document.getElementById('file-drop').dataset.filename || '';
+  const payload = {
+    title: vals.title, categoryId: vals.category, targetChallenge: vals.challenge,
+    currentProblem: vals.problem, proposedSolution: vals.solution, targetAudience: vals.audience,
+    attachmentName, authorId: user.id, department: user.department,
+    status, updatedAt: STORE.nowISO(),
+  };
+
+  if(editingId){
+    STORE.ideas().update(editingId, payload);
+    toast(status==='Draft' ? 'Draft updated.' : 'Idea posted.', 'success');
+  } else {
+    payload.id = STORE.uid('idea'); payload.createdAt = STORE.nowISO();
+    STORE.ideas().insert(payload);
+    toast(status==='Draft' ? 'Draft saved.' : 'Idea posted to the feed.', 'success');
+  }
+  resetForm();
+  renderPage();
+}
+
+function loadIdea(id){
+  const idea = STORE.ideas().find(id);
+  if(!idea) return;
+  editingId = id;
+  document.getElementById('form-title').textContent = idea.status === 'Draft' ? 'Edit draft' : 'Edit idea';
+  document.getElementById('title').value = idea.title;
+  document.getElementById('category').value = idea.categoryId;
+  document.getElementById('audience').value = idea.targetAudience;
+  document.getElementById('challenge').value = idea.targetChallenge;
+  document.getElementById('problem').value = idea.currentProblem;
+  document.getElementById('solution').value = idea.proposedSolution;
+  const drop = document.getElementById('file-drop');
+  if(idea.attachmentName){ drop.textContent = '📎 ' + idea.attachmentName; drop.classList.add('has-file'); drop.dataset.filename = idea.attachmentName; }
+  document.getElementById('delete-btn').style.display = 'inline-flex';
+  document.getElementById('post-btn').textContent = idea.status === 'Draft' ? 'Post idea' : 'Save changes';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function deleteIdea(id){
+  const idea = STORE.ideas().find(id);
+  confirmAction({
+    title: 'Delete this idea?',
+    message: `“${idea.title}” will be permanently removed${idea.status!=='Draft' ? ', including its comments, ratings and reactions' : ''}. This can't be undone.`,
+    confirmLabel: 'Delete', danger: true,
+    onConfirm: ()=>{
+      STORE.ideas().remove(id);
+      STORE.comments().where(c=>c.ideaId===id).forEach(c=>STORE.comments().remove(c.id));
+      STORE.ratings().where(r=>r.ideaId===id).forEach(r=>STORE.ratings().remove(r.id));
+      STORE.reactions().where(r=>r.ideaId===id).forEach(r=>STORE.reactions().remove(r.id));
+      if(editingId===id) resetForm();
+      toast('Idea deleted.', 'success');
+      renderPage();
+    }
+  });
+}
+
+function resetForm(){
+  editingId = null;
+  document.getElementById('idea-form').reset();
+  const drop = document.getElementById('file-drop');
+  if(drop){ drop.textContent = ICONS.paperclip + ' \u00a0Click to attach a file (mock upload — stores the file name only)'; drop.classList.remove('has-file'); drop.dataset.filename=''; }
+  const del = document.getElementById('delete-btn'); if(del) del.style.display='none';
+  const pb = document.getElementById('post-btn'); if(pb) pb.textContent = 'Post idea';
+  const ft = document.getElementById('form-title'); if(ft) ft.textContent = 'New idea';
+}
+
+renderPage();
+</script>
+</body>
+</html>

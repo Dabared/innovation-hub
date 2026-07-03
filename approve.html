@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Approve Ideas · Innovation Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/store.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const currentUser = AUTH.guardRole(['role_admin','role_committee']);
+if(currentUser){
+  renderShell({ activePage:'approve.html', eyebrow:'Innovation Committee', title:'Review & Approve Ideas' });
+}
+</script>
+
+
+<script>
+let tab = 'Submitted';
+
+function tabsHtml(){
+  const counts = {
+    Submitted: STORE.ideas().where(i=>i.status==='Submitted').length,
+    Approved: STORE.ideas().where(i=>i.status==='Approved').length,
+    'Needs Revision': STORE.ideas().where(i=>i.status==='Needs Revision').length,
+    Rejected: STORE.ideas().where(i=>i.status==='Rejected').length,
+  };
+  return `<div class="tabs">
+    ${Object.keys(counts).map(k=>`<button class="tab-btn ${tab===k?'active':''}" onclick="setTab('${k}')">${k} (${counts[k]})</button>`).join('')}
+  </div>`;
+}
+
+function setTab(k){ tab = k; renderList(); }
+
+function decisionPillClass(d){ return 'pill-status-'+d.toLowerCase().replace(' ','-'); }
+
+function ideaRow(idea){
+  const author = STORE.users().find(idea.authorId);
+  const dept = STORE.departments().find(idea.department);
+  const cat = STORE.categories().find(idea.categoryId);
+  const priorApprovals = STORE.approvals().where(a=>a.ideaId===idea.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+
+  return `
+  <div class="card card-pad" style="margin-bottom:16px;">
+    <div class="flex-between" style="align-items:flex-start;">
+      <div>
+        <div class="idea-card__title" style="font-size:15.5px;">${escapeHtml(idea.title)}</div>
+        <div class="muted" style="font-size:12.5px;margin-top:2px;">${escapeHtml(author?author.fullName:'Unknown')} · ${escapeHtml(dept?dept.name:'—')} · Submitted ${fmtDate(idea.createdAt)}</div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <span class="pill tag-category hex-tag">${escapeHtml(cat?cat.name:'Uncategorised')}</span>
+        <span class="pill pill-status-${idea.status.toLowerCase().replace(' ','-')} hex-tag">${escapeHtml(idea.status)}</span>
+      </div>
+    </div>
+    <div class="idea-card__grid" style="margin-top:14px;">
+      <div><div class="idea-card__field-label">Target challenge</div><div class="idea-card__field-value">${escapeHtml(idea.targetChallenge)||'—'}</div></div>
+      <div><div class="idea-card__field-label">Current problem</div><div class="idea-card__field-value">${escapeHtml(idea.currentProblem)||'—'}</div></div>
+      <div><div class="idea-card__field-label">Proposed solution</div><div class="idea-card__field-value">${escapeHtml(idea.proposedSolution)||'—'}</div></div>
+      <div><div class="idea-card__field-label">Target audience</div><div class="idea-card__field-value">${escapeHtml(idea.targetAudience)||'—'}</div></div>
+    </div>
+    ${idea.attachmentName ? `<div class="idea-card__attachment">${ICONS.paperclip} ${escapeHtml(idea.attachmentName)}</div>` : ''}
+
+    ${priorApprovals.length ? `
+      <div class="divider"></div>
+      <div class="section-title">Committee history</div>
+      ${priorApprovals.map(a=>{
+        const rev = STORE.users().find(a.committeeUserId);
+        return `<div style="display:flex;gap:9px;margin-bottom:10px;">
+          <div class="avatar" style="width:26px;height:26px;font-size:10.5px;">${initials(rev?rev.fullName:'??')}</div>
+          <div class="comment-bubble" style="flex:1;">
+            <div class="flex-between"><span class="name-strong">${escapeHtml(rev?rev.fullName:'Committee')}</span><span class="pill ${decisionPillClass(a.decision)} hex-tag">${escapeHtml(a.decision)}</span></div>
+            <div style="margin-top:4px;">${escapeHtml(a.comment)}</div>
+            <div class="muted" style="font-size:10.5px;margin-top:3px;">${fmtDateTime(a.createdAt)}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    ` : ''}
+
+    <div class="divider"></div>
+    <div class="section-title">Committee decision</div>
+    <textarea class="input" id="comment-${idea.id}" placeholder="Add a comment for the submitter (visible in idea history)…" style="margin-bottom:10px;"></textarea>
+    <div class="gap-8" style="justify-content:flex-end;">
+      <button class="btn btn-danger" onclick="decide('${idea.id}','Rejected')">Reject</button>
+      <button class="btn btn-outline" onclick="decide('${idea.id}','Needs Revision')">Request revision</button>
+      <button class="btn btn-primary" onclick="decide('${idea.id}','Approved')">Approve</button>
+    </div>
+  </div>`;
+}
+
+function renderList(){
+  const items = STORE.ideas().where(i=>i.status===tab).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  document.getElementById('list-mount').innerHTML = items.length===0
+    ? `<div class="empty-state">${ICONS.approve}<h3>Nothing in “${tab}”</h3><p>Ideas will show up here as they move through review.</p></div>`
+    : items.map(ideaRow).join('');
+  document.getElementById('tabs-mount').innerHTML = tabsHtml();
+}
+
+function decide(ideaId, decision){
+  const comment = document.getElementById('comment-'+ideaId).value.trim();
+  if(!comment){ toast('Add a comment explaining your decision.', 'error'); return; }
+  STORE.approvals().insert({ ideaId, committeeUserId: currentUser.id, decision, comment, createdAt: STORE.nowISO() });
+  STORE.comments().insert({ ideaId, userId: currentUser.id, text: `[${decision}] ${comment}`, createdAt: STORE.nowISO(), context:'approval' });
+  STORE.ideas().update(ideaId, { status: decision, updatedAt: STORE.nowISO() });
+  toast(`Idea marked as ${decision}.`, 'success');
+  renderList();
+}
+
+if(currentUser){
+  document.getElementById('content-mount').innerHTML = `<div id="tabs-mount"></div><div id="list-mount"></div>`;
+  renderList();
+}
+</script>
+</body>
+</html>

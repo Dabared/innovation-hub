@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Browse Ideas · Innovation Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/store.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = renderShell({ activePage:'idea-view.html', eyebrow:'Community', title:'Browse Innovation Ideas' });
+</script>
+
+
+<script>
+const REACTIONS = [
+  { type:'like', label:'Like', icon: ICONS.thumb },
+  { type:'insightful', label:'Insightful', icon: ICONS.bulb },
+  { type:'exciting', label:'Exciting', icon: ICONS.fire },
+];
+
+let filters = { category:'', department:'', q:'' };
+
+function renderFilterBar(){
+  const cats = STORE.categories().all();
+  const depts = STORE.departments().all();
+  return `
+    <div class="filter-bar">
+      <div class="search-wrap">
+        ${ICONS.search}
+        <input class="input" id="search-input" placeholder="Search by idea title, name or department…" value="${escapeHtml(filters.q)}">
+      </div>
+      <select class="input" id="category-filter" style="max-width:190px;">
+        <option value="">All categories</option>
+        ${cats.map(c=>`<option value="${c.id}" ${c.id===filters.category?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
+      </select>
+      <select class="input" id="department-filter" style="max-width:190px;">
+        <option value="">All departments</option>
+        ${depts.map(d=>`<option value="${d.id}" ${d.id===filters.department?'selected':''}>${escapeHtml(d.name)}</option>`).join('')}
+      </select>
+      <button class="btn btn-ghost btn-sm" id="clear-filters-btn">Clear</button>
+    </div>
+  `;
+}
+
+function matchesFilters(idea, author, dept){
+  if(filters.category && idea.categoryId !== filters.category) return false;
+  if(filters.department && idea.department !== filters.department) return false;
+  if(filters.q){
+    const q = filters.q.toLowerCase();
+    const hay = [idea.title, author?author.fullName:'', dept?dept.name:''].join(' ').toLowerCase();
+    if(!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+function starRow(ideaId, avgStars, myStars){
+  let html = `<div class="rating-stars" data-idea="${ideaId}">`;
+  for(let i=1;i<=5;i++){
+    html += `<span class="star-btn" data-star="${i}" style="color:${i<=Math.round(myStars||avgStars)?'var(--spark-dark)':'var(--line)'}">${i<=Math.round(myStars||avgStars)?ICONS.star:ICONS.starOutline}</span>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function ideaCardHtml(idea){
+  const author = STORE.users().find(idea.authorId);
+  const dept = STORE.departments().find(idea.department);
+  const cat = STORE.categories().find(idea.categoryId);
+  const cmts = STORE.comments().where(c=>c.ideaId===idea.id && c.context==='view');
+  const ratings = STORE.ratings().where(r=>r.ideaId===idea.id);
+  const avgStars = ratings.length ? ratings.reduce((s,r)=>s+r.stars,0)/ratings.length : 0;
+  const myRating = STORE.ratings().where(r=>r.ideaId===idea.id && r.userId===user.id)[0];
+  const myReactions = STORE.reactions().where(r=>r.ideaId===idea.id && r.userId===user.id).map(r=>r.type);
+
+  return `
+    <article class="idea-card" data-idea-id="${idea.id}">
+      <div class="idea-card__head">
+        <div class="idea-card__author">
+          <div class="avatar">${initials(author?author.fullName:'??')}</div>
+          <div class="idea-card__meta">
+            <div class="name-strong">${escapeHtml(author?author.fullName:'Unknown')}</div>
+            <div class="muted">${escapeHtml(dept?dept.name:'—')} · ${fmtDate(idea.createdAt)}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <span class="pill tag-category hex-tag">${escapeHtml(cat?cat.name:'Uncategorised')}</span>
+          <span class="pill pill-status-${idea.status.toLowerCase().replace(' ','-')} hex-tag">${escapeHtml(idea.status)}</span>
+        </div>
+      </div>
+      <div class="idea-card__body">
+        <div class="idea-card__title">${escapeHtml(idea.title)}</div>
+        <div class="idea-card__grid">
+          <div><div class="idea-card__field-label">Target challenge</div><div class="idea-card__field-value">${escapeHtml(idea.targetChallenge)||'—'}</div></div>
+          <div><div class="idea-card__field-label">Current problem</div><div class="idea-card__field-value">${escapeHtml(idea.currentProblem)||'—'}</div></div>
+          <div><div class="idea-card__field-label">Proposed solution</div><div class="idea-card__field-value">${escapeHtml(idea.proposedSolution)||'—'}</div></div>
+          <div><div class="idea-card__field-label">Target audience</div><div class="idea-card__field-value">${escapeHtml(idea.targetAudience)||'—'}</div></div>
+        </div>
+        ${idea.attachmentName ? `<div class="idea-card__attachment">${ICONS.paperclip} ${escapeHtml(idea.attachmentName)}</div>` : ''}
+      </div>
+      <div class="idea-card__foot">
+        <div class="reactions">
+          ${REACTIONS.map(r=>`
+            <button class="react-btn ${myReactions.includes(r.type)?'active':''}" onclick="toggleReaction('${idea.id}','${r.type}')">
+              ${r.icon}${r.label} <span class="muted" style="font-size:11px;">${STORE.reactions().where(x=>x.ideaId===idea.id && x.type===r.type).length||''}</span>
+            </button>`).join('')}
+        </div>
+        <div class="gap-8">
+          ${starRow(idea.id, avgStars, myRating?myRating.stars:0)}
+          <span class="muted" style="font-size:11.5px;">${avgStars? avgStars.toFixed(1):'—'} (${ratings.length})</span>
+          <button class="comment-toggle" onclick="toggleComments('${idea.id}')">${ICONS.comment} ${cmts.length} comment${cmts.length===1?'':'s'}</button>
+        </div>
+      </div>
+      <div class="comments-block" id="comments-${idea.id}">
+        ${cmts.length===0 ? `<div class="muted" style="font-size:12.5px;">No comments yet — be the first to weigh in.</div>` : cmts.map(c=>{
+          const cu = STORE.users().find(c.userId);
+          return `<div class="comment-row">
+            <div class="avatar" style="width:26px;height:26px;font-size:10.5px;">${initials(cu?cu.fullName:'??')}</div>
+            <div class="comment-bubble"><div class="name-strong">${escapeHtml(cu?cu.fullName:'Unknown')}</div>${escapeHtml(c.text)}<div class="muted" style="font-size:10.5px;margin-top:3px;">${fmtDateTime(c.createdAt)}</div></div>
+          </div>`;
+        }).join('')}
+        <div class="comment-input-row">
+          <div class="avatar" style="width:26px;height:26px;font-size:10.5px;">${initials(user.fullName)}</div>
+          <input class="input" placeholder="Write a comment…" id="comment-input-${idea.id}" onkeydown="if(event.key==='Enter'){submitComment('${idea.id}')}">
+          <button class="btn btn-primary btn-sm" onclick="submitComment('${idea.id}')">Post</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderFeed(){
+  const ideas = STORE.ideas().where(i=> i.status !== 'Draft').sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  const visible = ideas.filter(i=>{
+    const author = STORE.users().find(i.authorId);
+    const dept = STORE.departments().find(i.department);
+    return matchesFilters(i, author, dept);
+  });
+  document.getElementById('feed-mount').innerHTML = visible.length===0
+    ? `<div class="empty-state">${ICONS.inbox}<h3>No ideas match your filters</h3><p>Try clearing the filters or search with different terms.</p></div>`
+    : visible.map(ideaCardHtml).join('');
+}
+
+function renderPage(){
+  document.getElementById('content-mount').innerHTML = `${renderFilterBar()}<div id="feed-mount"></div>`;
+  document.getElementById('search-input').addEventListener('input', (e)=>{ filters.q = e.target.value; renderFeed(); });
+  document.getElementById('category-filter').addEventListener('change', (e)=>{ filters.category = e.target.value; renderFeed(); });
+  document.getElementById('department-filter').addEventListener('change', (e)=>{ filters.department = e.target.value; renderFeed(); });
+  document.getElementById('clear-filters-btn').addEventListener('click', ()=>{ filters = { category:'', department:'', q:'' }; renderPage(); renderFeed(); });
+  renderFeed();
+}
+
+function toggleComments(ideaId){
+  document.getElementById('comments-'+ideaId).classList.toggle('open');
+}
+
+function submitComment(ideaId){
+  const input = document.getElementById('comment-input-'+ideaId);
+  const text = input.value.trim();
+  if(!text) return;
+  STORE.comments().insert({ ideaId, userId: user.id, text, createdAt: STORE.nowISO(), context:'view' });
+  renderFeed();
+  document.getElementById('comments-'+ideaId).classList.add('open');
+}
+
+function toggleReaction(ideaId, type){
+  const existing = STORE.reactions().where(r=>r.ideaId===ideaId && r.userId===user.id && r.type===type)[0];
+  if(existing){ STORE.reactions().remove(existing.id); }
+  else { STORE.reactions().insert({ ideaId, userId:user.id, type }); }
+  renderFeed();
+}
+
+document.addEventListener('click', (e)=>{
+  const starBtn = e.target.closest('.star-btn');
+  if(!starBtn) return;
+  const wrap = starBtn.closest('.rating-stars');
+  const ideaId = wrap.dataset.idea;
+  const stars = Number(starBtn.dataset.star);
+  const existing = STORE.ratings().where(r=>r.ideaId===ideaId && r.userId===user.id)[0];
+  if(existing){ STORE.ratings().update(existing.id, { stars }); }
+  else { STORE.ratings().insert({ ideaId, userId:user.id, stars }); }
+  renderFeed();
+});
+
+renderPage();
+</script>
+</body>
+</html>

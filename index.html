@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in · Innovation Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="login-screen">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="brand-mark" style="width:38px;height:38px;"></div>
+      <div class="login-brand-text">Innovation Hub<span>Idea Management System</span></div>
+    </div>
+
+    <form id="login-form" novalidate>
+      <div class="field" id="f-email">
+        <label for="email">Email address</label>
+        <input class="input" type="email" id="email" placeholder="you@company.com" autocomplete="username" required>
+        <div class="error-text">Enter the email address on your account.</div>
+      </div>
+      <div class="field" id="f-password">
+        <label for="password">Password</label>
+        <input class="input" type="password" id="password" placeholder="••••••••" autocomplete="current-password" required>
+        <div class="error-text">Enter your password.</div>
+      </div>
+      <div id="login-error" style="display:none; background:var(--rust-bg); color:var(--rust); font-size:12.5px; padding:9px 12px; border-radius:var(--radius-sm); margin-bottom:14px;"></div>
+      <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+      <button type="button" class="btn btn-ghost btn-block" style="margin-top:6px;" id="forgot-btn">Forgot password?</button>
+    </form>
+
+    <div class="demo-creds">
+      DEMO ACCOUNTS — password shown for evaluation only<br>
+      Admin&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: admin@innovate.com / admin123<br>
+      Committee : committee@innovate.com / comm123<br>
+      Dept Lead : lead@innovate.com / lead123<br>
+      Employee&nbsp;: kasun@innovate.com / user123
+    </div>
+  </div>
+</div>
+<div class="footer-note" style="position:fixed;bottom:14px;left:0;right:0;text-align:center;color:var(--text-inv-muted);font-size:11px;font-family:var(--font-mono);">Internal Use Only · v1.0</div>
+
+<script src="js/store.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  // Already signed in? Skip straight to dashboard.
+  if(AUTH.currentUser()){ window.location.href = 'dashboard.html'; }
+
+  const form = document.getElementById('login-form');
+  form.addEventListener('submit', (e)=>{
+    e.preventDefault();
+    document.getElementById('f-email').classList.remove('invalid');
+    document.getElementById('f-password').classList.remove('invalid');
+    document.getElementById('login-error').style.display = 'none';
+
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    let valid = true;
+    if(!email){ document.getElementById('f-email').classList.add('invalid'); valid = false; }
+    if(!password){ document.getElementById('f-password').classList.add('invalid'); valid = false; }
+    if(!valid) return;
+
+    const result = AUTH.login(email, password);
+    if(!result.ok){
+      const box = document.getElementById('login-error');
+      box.textContent = result.error;
+      box.style.display = 'block';
+      return;
+    }
+    window.location.href = 'dashboard.html';
+  });
+
+  document.getElementById('forgot-btn').addEventListener('click', ()=>{
+    alert('Please contact your System Administrator to reset your password from the User Administration screen.');
+  });
+</script>
+</body>
+</html>

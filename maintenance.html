@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Maintenance · Innovation Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/store.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const currentUser = AUTH.guardRole(['role_admin']);
+if(currentUser){
+  renderShell({ activePage:'maintenance.html', eyebrow:'Administration', title:'System Maintenance' });
+}
+</script>
+
+
+<script>
+let mTab = 'departments';
+
+const CONFIG = {
+  departments: { table: STORE.departments, label:'Department', plural:'Departments', usedBy: (id)=> STORE.users().where(u=>u.department===id).length + STORE.ideas().where(i=>i.department===id).length },
+  roles:       { table: STORE.roles,       label:'Role',       plural:'User Roles',   usedBy: (id)=> STORE.users().where(u=>u.role===id).length, hasDescription: true },
+  categories:  { table: STORE.categories,  label:'Category',   plural:'Idea Categories', usedBy: (id)=> STORE.ideas().where(i=>i.categoryId===id).length },
+};
+
+function switchTab(t){ mTab = t; renderPage(); }
+
+function renderPage(){
+  document.getElementById('content-mount').innerHTML = `
+    <div class="tabs">
+      <button class="tab-btn ${mTab==='departments'?'active':''}" onclick="switchTab('departments')">${ICONS.building} Departments</button>
+      <button class="tab-btn ${mTab==='roles'?'active':''}" onclick="switchTab('roles')">${ICONS.users} User Roles</button>
+      <button class="tab-btn ${mTab==='categories'?'active':''}" onclick="switchTab('categories')">${ICONS.bulb} Idea Categories</button>
+    </div>
+    <div class="card card-pad">
+      <div class="panel-head">
+        <div><h3>${CONFIG[mTab].plural}</h3><p>Add, rename or remove entries used across the system.</p></div>
+        <button class="btn btn-primary" onclick="addModal()">+ Add ${CONFIG[mTab].label.toLowerCase()}</button>
+      </div>
+      <div id="list-mount"></div>
+    </div>
+  `;
+  renderList();
+}
+
+function renderList(){
+  const cfg = CONFIG[mTab];
+  const items = cfg.table().all();
+  document.getElementById('list-mount').innerHTML = items.length===0
+    ? `<div class="empty-state">${ICONS.inbox}<h3>Nothing here yet</h3><p>Add your first ${cfg.label.toLowerCase()} to get started.</p></div>`
+    : `<div class="table-wrap"><table class="data-table"><thead><tr><th>Name</th>${cfg.hasDescription?'<th>Description</th>':''}<th>In use</th><th></th></tr></thead><tbody>
+      ${items.map(it=>`
+        <tr>
+          <td class="name-strong">${escapeHtml(it.name)}</td>
+          ${cfg.hasDescription?`<td class="muted">${escapeHtml(it.description||'—')}</td>`:''}
+          <td class="muted" style="font-family:var(--font-mono);">${cfg.usedBy(it.id)} record(s)</td>
+          <td>
+            <div class="gap-8">
+              <button class="btn btn-ghost btn-sm" onclick='editModal(${JSON.stringify(it).replace(/'/g,"&#39;")})'>${ICONS.edit}</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--rust)" onclick='removeItem("${it.id}", ${cfg.usedBy(it.id)})'>${ICONS.trash}</button>
+            </div>
+          </td>
+        </tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+function addModal(){ formModal(null); }
+function editModal(item){ formModal(item); }
+
+function formModal(existing){
+  const cfg = CONFIG[mTab];
+  const isEdit = !!existing;
+  openModal(`
+    <div class="modal__head"><h3>${isEdit?'Edit':'Add'} ${cfg.label.toLowerCase()}</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+    <div class="modal__body">
+      <div class="field" id="f-name">
+        <label>${cfg.label} name *</label>
+        <input class="input" id="item-name" value="${isEdit?escapeHtml(existing.name):''}" placeholder="e.g. ${mTab==='departments'?'Supply Chain':mTab==='roles'?'Reviewer':'Cost Reduction'}">
+        <div class="error-text">Enter a name.</div>
+      </div>
+      ${cfg.hasDescription ? `
+      <div class="field">
+        <label>Description</label>
+        <textarea class="input" id="item-desc" placeholder="What can this role do?">${isEdit?escapeHtml(existing.description||''):''}</textarea>
+      </div>` : ''}
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="save-item-btn">${isEdit?'Save changes':'Add '+cfg.label.toLowerCase()}</button>
+    </div>
+  `);
+  document.getElementById('save-item-btn').addEventListener('click', ()=>{
+    const name = document.getElementById('item-name').value.trim();
+    if(!name){ document.getElementById('f-name').classList.add('invalid'); return; }
+    const payload = { name };
+    if(cfg.hasDescription) payload.description = document.getElementById('item-desc').value.trim();
+    if(isEdit){ cfg.table().update(existing.id, payload); toast('Updated.', 'success'); }
+    else { payload.id = STORE.uid(mTab.slice(0,4)); cfg.table().insert(payload); toast('Added.', 'success'); }
+    closeModal();
+    renderList();
+  });
+}
+
+function removeItem(id, usedCount){
+  const cfg = CONFIG[mTab];
+  if(usedCount > 0){
+    toast(`Can't delete — ${usedCount} record(s) still reference this ${cfg.label.toLowerCase()}.`, 'error');
+    return;
+  }
+  confirmAction({
+    title:`Delete this ${cfg.label.toLowerCase()}?`, message:'This cannot be undone.', confirmLabel:'Delete', danger:true,
+    onConfirm: ()=>{ cfg.table().remove(id); toast('Deleted.', 'success'); renderList(); }
+  });
+}
+
+if(currentUser) renderPage();
+</script>
+</body>
+</html>

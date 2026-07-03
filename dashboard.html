@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lead Dashboard · Innovation Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/store.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = renderShell({ activePage:'dashboard.html', eyebrow:'Overview', title:'Lead Dashboard' });
+</script>
+
+
+<script>
+(function(){
+  const ideas = STORE.ideas().all();
+  const users = STORE.users().all();
+  const depts = STORE.departments().all();
+  const cats = STORE.categories().all();
+  const comments = STORE.comments().all();
+  const approvals = STORE.approvals().all();
+
+  const total = ideas.length;
+  const approved = ideas.filter(i=>i.status==='Approved').length;
+  const submitted = ideas.filter(i=>i.status==='Submitted').length;
+  const revision = ideas.filter(i=>i.status==='Needs Revision').length;
+  const rejected = ideas.filter(i=>i.status==='Rejected').length;
+  const approvalRate = total ? Math.round((approved/total)*100) : 0;
+
+  // department breakdown
+  const deptCounts = depts.map(d=>({
+    name: d.name,
+    count: ideas.filter(i=>i.department===d.id).length
+  })).sort((a,b)=>b.count-a.count);
+  const maxDept = Math.max(1, ...deptCounts.map(d=>d.count));
+
+  // category breakdown
+  const catCounts = cats.map(c=>({
+    name: c.name,
+    count: ideas.filter(i=>i.categoryId===c.id).length
+  })).sort((a,b)=>b.count-a.count);
+  const maxCat = Math.max(1, ...catCounts.map(c=>c.count));
+
+  // recent activity: merge idea submissions + approvals + comments, sort by date desc
+  const activity = [];
+  ideas.forEach(i=>{
+    const author = users.find(u=>u.id===i.authorId);
+    activity.push({ at: i.createdAt, html: `<b>${escapeHtml(author?author.callName:'Someone')}</b> submitted <b>“${escapeHtml(i.title)}”</b>` });
+  });
+  approvals.forEach(a=>{
+    const idea = ideas.find(i=>i.id===a.ideaId);
+    const rev = users.find(u=>u.id===a.committeeUserId);
+    activity.push({ at: a.createdAt, html: `<b>${escapeHtml(rev?rev.callName:'Committee')}</b> marked <b>“${escapeHtml(idea?idea.title:'an idea')}”</b> as <span class="pill pill-status-${a.decision.toLowerCase().replace(' ','-')} hex-tag" style="display:inline-flex;">${escapeHtml(a.decision)}</span>` });
+  });
+  comments.forEach(c=>{
+    const idea = ideas.find(i=>i.id===c.ideaId);
+    const cu = users.find(u=>u.id===c.userId);
+    activity.push({ at: c.createdAt, html: `<b>${escapeHtml(cu?cu.callName:'Someone')}</b> commented on <b>“${escapeHtml(idea?idea.title:'an idea')}”</b>` });
+  });
+  activity.sort((a,b)=> new Date(b.at) - new Date(a.at));
+
+  document.getElementById('content-mount').innerHTML = `
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Ideas Submitted</div>
+        <div class="stat-value">${total}</div>
+        <div class="stat-delta">Across ${depts.length} departments</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Approved Ideas</div>
+        <div class="stat-value">${approved}</div>
+        <div class="stat-delta">${approvalRate}% approval rate</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Pending Review</div>
+        <div class="stat-value">${submitted}</div>
+        <div class="stat-delta" style="color:var(--blue)">Awaiting committee</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Needs Revision / Rejected</div>
+        <div class="stat-value">${revision + rejected}</div>
+        <div class="stat-delta" style="color:var(--rust)">${rejected} rejected · ${revision} revision</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start;">
+      <div class="card card-pad">
+        <div class="panel-head"><div><h3>Ideas by department</h3><p>Submission volume across the organisation</p></div></div>
+        ${deptCounts.map(d=>`
+          <div style="margin-bottom:14px;">
+            <div class="flex-between" style="margin-bottom:5px;"><span style="font-size:13px;font-weight:600;">${escapeHtml(d.name)}</span><span class="muted" style="font-family:var(--font-mono);font-size:12px;">${d.count}</span></div>
+            <div style="height:8px;background:var(--paper);border-radius:4px;overflow:hidden;">
+              <div style="height:100%;width:${(d.count/maxDept)*100}%;background:var(--spark);border-radius:4px;"></div>
+            </div>
+          </div>`).join('')}
+
+        <div class="divider"></div>
+        <div class="panel-head"><div><h3>Ideas by category</h3><p>Where innovation energy is concentrated</p></div></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          ${catCounts.map(c=>`
+            <div class="card" style="padding:12px 16px;flex:1;min-width:150px;">
+              <div class="muted" style="font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;">${escapeHtml(c.name)}</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:700;margin-top:4px;">${c.count}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+
+      <div class="card card-pad">
+        <div class="panel-head"><div><h3>Recent activity</h3><p>Latest submissions, reviews & comments</p></div></div>
+        ${activity.length===0 ? `<div class="empty-state">${ICONS.inbox}<h3>Nothing yet</h3><p>Activity will appear here as ideas are submitted.</p></div>` :
+        activity.slice(0,8).map(a=>`
+          <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);">
+            <div style="width:6px;height:6px;border-radius:50%;background:var(--spark);margin-top:7px;flex-shrink:0;"></div>
+            <div style="font-size:12.8px;line-height:1.5;">${a.html}<div class="muted" style="font-size:11px;margin-top:2px;">${fmtDateTime(a.at)}</div></div>
+          </div>`).join('')}
+      </div>
+    </div>
+  `;
+})();
+</script>
+</body>
+</html>

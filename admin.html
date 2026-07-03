@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>User Administration · Innovation Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/store.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const currentUser = AUTH.guardRole(['role_admin']);
+if(currentUser){
+  renderShell({
+    activePage:'admin.html', eyebrow:'Administration', title:'User Administration',
+    topbarActionsHtml: `<button class="btn btn-primary" id="new-user-btn">+ New user</button>`
+  });
+}
+</script>
+
+
+<script>
+function deptOptions(selected){
+  return STORE.departments().all().map(d=>`<option value="${d.id}" ${d.id===selected?'selected':''}>${escapeHtml(d.name)}</option>`).join('');
+}
+function roleOptions(selected){
+  return STORE.roles().all().map(r=>`<option value="${r.id}" ${r.id===selected?'selected':''}>${escapeHtml(r.name)}</option>`).join('');
+}
+
+function userFormModal(existing){
+  const isEdit = !!existing;
+  openModal(`
+    <div class="modal__head"><h3>${isEdit?'Edit user':'Create user'}</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+    <div class="modal__body">
+      <form id="user-form" novalidate>
+        <div class="field" id="f-fullName">
+          <label>User full name *</label>
+          <input class="input" id="fullName" value="${isEdit?escapeHtml(existing.fullName):''}" placeholder="e.g. Kasun Jayasuriya">
+          <div class="error-text">Enter the user's full name.</div>
+        </div>
+        <div class="field" id="f-callName">
+          <label>Employee call name *</label>
+          <input class="input" id="callName" value="${isEdit?escapeHtml(existing.callName):''}" placeholder="e.g. Kasun">
+          <div class="error-text">Enter the name they go by day-to-day.</div>
+        </div>
+        <div class="field-row">
+          <div class="field" id="f-department">
+            <label>Department *</label>
+            <select class="input" id="department"><option value="">Select department</option>${deptOptions(existing?existing.department:'')}</select>
+            <div class="error-text">Select a department.</div>
+          </div>
+          <div class="field" id="f-role">
+            <label>User role *</label>
+            <select class="input" id="role"><option value="">Select role</option>${roleOptions(existing?existing.role:'')}</select>
+            <div class="error-text">Select a role.</div>
+          </div>
+        </div>
+        <div class="field" id="f-email">
+          <label>Email address *</label>
+          <input class="input" type="email" id="email" value="${isEdit?escapeHtml(existing.email):''}" placeholder="name@company.com" ${isEdit?'':''}>
+          <div class="hint">This is also the username used to sign in.</div>
+          <div class="error-text">Enter a valid email address.</div>
+        </div>
+        ${!isEdit ? `
+        <div class="field" id="f-password">
+          <label>Temporary password *</label>
+          <input class="input" type="text" id="password" placeholder="Set an initial password">
+          <div class="hint">Share this with the user — they can request a reset later.</div>
+          <div class="error-text">Set a temporary password.</div>
+        </div>` : ''}
+      </form>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="save-user-btn">${isEdit?'Save changes':'Create user'}</button>
+    </div>
+  `);
+
+  document.getElementById('save-user-btn').addEventListener('click', ()=>{
+    const fields = ['fullName','callName','department','role','email'];
+    if(!isEdit) fields.push('password');
+    let valid = true;
+    fields.forEach(f=>{
+      document.getElementById('f-'+f).classList.remove('invalid');
+      if(!document.getElementById(f).value.trim()){ document.getElementById('f-'+f).classList.add('invalid'); valid = false; }
+    });
+    const email = document.getElementById('email').value.trim();
+    if(email && !/^\S+@\S+\.\S+$/.test(email)){ document.getElementById('f-email').classList.add('invalid'); valid = false; }
+    if(!valid) return;
+
+    const dupe = STORE.users().where(u => u.email.toLowerCase()===email.toLowerCase() && (!isEdit || u.id!==existing.id));
+    if(dupe.length){ document.getElementById('f-email').classList.add('invalid'); toast('That email is already in use.', 'error'); return; }
+
+    const payload = {
+      fullName: document.getElementById('fullName').value.trim(),
+      callName: document.getElementById('callName').value.trim(),
+      department: document.getElementById('department').value,
+      role: document.getElementById('role').value,
+      email,
+    };
+    if(isEdit){
+      STORE.users().update(existing.id, payload);
+      toast('User updated.', 'success');
+    } else {
+      payload.password = document.getElementById('password').value;
+      payload.status = 'Active';
+      payload.createdAt = STORE.nowISO();
+      payload.id = STORE.uid('user');
+      STORE.users().insert(payload);
+      toast('User created.', 'success');
+    }
+    closeModal();
+    renderList();
+  });
+}
+
+function resetPasswordModal(u){
+  openModal(`
+    <div class="modal__head"><h3>Reset password</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+    <div class="modal__body">
+      <p style="margin-top:0;color:var(--text-muted);font-size:13px;">Set a new temporary password for <b style="color:var(--text)">${escapeHtml(u.fullName)}</b>. Share it with them securely.</p>
+      <div class="field" id="f-newpass">
+        <label>New password *</label>
+        <input class="input" id="newpass" placeholder="Enter a new password">
+        <div class="error-text">Enter a new password.</div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="confirm-reset-btn">Reset password</button>
+    </div>
+  `);
+  document.getElementById('confirm-reset-btn').addEventListener('click', ()=>{
+    const val = document.getElementById('newpass').value;
+    if(!val){ document.getElementById('f-newpass').classList.add('invalid'); return; }
+    STORE.users().update(u.id, { password: val });
+    toast('Password reset.', 'success');
+    closeModal();
+  });
+}
+
+function toggleStatus(u){
+  const next = u.status === 'Active' ? 'Inactive' : 'Active';
+  STORE.users().update(u.id, { status: next });
+  toast(`User ${next==='Active'?'reactivated':'deactivated'}.`, 'success');
+  renderList();
+}
+
+function deleteUser(u){
+  if(u.id === currentUser.id){ toast("You can't delete your own account.", 'error'); return; }
+  confirmAction({
+    title:'Delete this user?', message:`${u.fullName} will lose access immediately. Ideas they authored remain in the system.`,
+    confirmLabel:'Delete', danger:true,
+    onConfirm: ()=>{ STORE.users().remove(u.id); toast('User deleted.', 'success'); renderList(); }
+  });
+}
+
+function renderList(){
+  const users = STORE.users().all().sort((a,b)=>a.fullName.localeCompare(b.fullName));
+  document.getElementById('content-mount').innerHTML = `
+    <div class="card">
+      <div class="card-pad" style="padding-bottom:0;">
+        <div class="panel-head"><div><h3>All users</h3><p>${users.length} accounts</p></div></div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>User</th><th>Department</th><th>Role</th><th>Email (username)</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            ${users.map(u=>`
+              <tr>
+                <td><div class="row-user"><div class="avatar">${initials(u.fullName)}</div><div><div class="name-strong">${escapeHtml(u.fullName)}</div><div class="muted" style="font-size:11.5px;">"${escapeHtml(u.callName)}"</div></div></div></td>
+                <td>${escapeHtml(AUTH.deptName(u))}</td>
+                <td><span class="pill tag-category hex-tag">${escapeHtml(AUTH.roleName(u))}</span></td>
+                <td class="muted" style="font-family:var(--font-mono);font-size:12px;">${escapeHtml(u.email)}</td>
+                <td><span class="pill ${u.status==='Active'?'pill-status-approved':'pill-status-rejected'} hex-tag">${u.status}</span></td>
+                <td>
+                  <div class="gap-8">
+                    <button class="btn btn-ghost btn-sm" title="Edit" onclick='userFormModal(${JSON.stringify(u).replace(/'/g,"&#39;")})'>${ICONS.edit}</button>
+                    <button class="btn btn-ghost btn-sm" title="Reset password" onclick='resetPasswordModal(${JSON.stringify(u).replace(/'/g,"&#39;")})'>${ICONS.key}</button>
+                    <button class="btn btn-ghost btn-sm" title="${u.status==='Active'?'Deactivate':'Reactivate'}" onclick='toggleStatus(${JSON.stringify(u).replace(/'/g,"&#39;")})'>${u.status==='Active'?'⏸':'▶'}</button>
+                    <button class="btn btn-ghost btn-sm" style="color:var(--rust)" title="Delete" onclick='deleteUser(${JSON.stringify(u).replace(/'/g,"&#39;")})'>${ICONS.trash}</button>
+                  </div>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+if(currentUser){
+  renderList();
+  document.getElementById('new-user-btn').addEventListener('click', ()=> userFormModal(null));
+}
+</script>
+</body>
+</html>
