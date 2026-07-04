@@ -9,15 +9,14 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<script src="js/remoteApi.js"></script>
 <script src="js/store.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/app.js"></script>
-<script>
-const user = renderShell({ activePage:'idea-view.html', eyebrow:'Community', title:'Browse Innovation Ideas' });
-</script>
-
 
 <script>
+let user = null;
+
 const REACTIONS = [
   { type:'like', label:'Like', icon: ICONS.thumb },
   { type:'insightful', label:'Insightful', icon: ICONS.bulb },
@@ -159,35 +158,53 @@ function toggleComments(ideaId){
   document.getElementById('comments-'+ideaId).classList.toggle('open');
 }
 
-function submitComment(ideaId){
+async function submitComment(ideaId){
   const input = document.getElementById('comment-input-'+ideaId);
   const text = input.value.trim();
   if(!text) return;
-  STORE.comments().insert({ ideaId, userId: user.id, text, createdAt: STORE.nowISO(), context:'view' });
-  renderFeed();
-  document.getElementById('comments-'+ideaId).classList.add('open');
+  input.disabled = true;
+  try{
+    await STORE.comments().insert({ ideaId, userId: user.id, text, createdAt: STORE.nowISO(), context:'view' });
+    renderFeed();
+    document.getElementById('comments-'+ideaId).classList.add('open');
+  } catch(err){
+    toast('Could not post comment: ' + (err.message||err), 'error');
+    input.disabled = false;
+  }
 }
 
-function toggleReaction(ideaId, type){
+async function toggleReaction(ideaId, type){
   const existing = STORE.reactions().where(r=>r.ideaId===ideaId && r.userId===user.id && r.type===type)[0];
-  if(existing){ STORE.reactions().remove(existing.id); }
-  else { STORE.reactions().insert({ ideaId, userId:user.id, type }); }
-  renderFeed();
+  try{
+    if(existing){ await STORE.reactions().remove(existing.id); }
+    else { await STORE.reactions().insert({ ideaId, userId:user.id, type }); }
+    renderFeed();
+  } catch(err){
+    toast('Could not update reaction: ' + (err.message||err), 'error');
+  }
 }
 
-document.addEventListener('click', (e)=>{
+document.addEventListener('click', async (e)=>{
   const starBtn = e.target.closest('.star-btn');
   if(!starBtn) return;
   const wrap = starBtn.closest('.rating-stars');
   const ideaId = wrap.dataset.idea;
   const stars = Number(starBtn.dataset.star);
   const existing = STORE.ratings().where(r=>r.ideaId===ideaId && r.userId===user.id)[0];
-  if(existing){ STORE.ratings().update(existing.id, { stars }); }
-  else { STORE.ratings().insert({ ideaId, userId:user.id, stars }); }
-  renderFeed();
+  try{
+    if(existing){ await STORE.ratings().update(existing.id, { stars }); }
+    else { await STORE.ratings().insert({ ideaId, userId:user.id, stars }); }
+    renderFeed();
+  } catch(err){
+    toast('Could not save rating: ' + (err.message||err), 'error');
+  }
 });
 
-renderPage();
+bootPage(async ()=>{
+  user = renderShell({ activePage:'idea-view.html', eyebrow:'Community', title:'Browse Innovation Ideas' });
+  if(!user) return;
+  renderPage();
+});
 </script>
 </body>
 </html>

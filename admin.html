@@ -9,21 +9,14 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<script src="js/remoteApi.js"></script>
 <script src="js/store.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/app.js"></script>
-<script>
-const currentUser = AUTH.guardRole(['role_admin']);
-if(currentUser){
-  renderShell({
-    activePage:'admin.html', eyebrow:'Administration', title:'User Administration',
-    topbarActionsHtml: `<button class="btn btn-primary" id="new-user-btn">+ New user</button>`
-  });
-}
-</script>
-
 
 <script>
+let currentUser = null;
+
 function deptOptions(selected){
   return STORE.departments().all().map(d=>`<option value="${d.id}" ${d.id===selected?'selected':''}>${escapeHtml(d.name)}</option>`).join('');
 }
@@ -61,7 +54,7 @@ function userFormModal(existing){
         </div>
         <div class="field" id="f-email">
           <label>Email address *</label>
-          <input class="input" type="email" id="email" value="${isEdit?escapeHtml(existing.email):''}" placeholder="name@company.com" ${isEdit?'':''}>
+          <input class="input" type="email" id="email" value="${isEdit?escapeHtml(existing.email):''}" placeholder="name@company.com">
           <div class="hint">This is also the username used to sign in.</div>
           <div class="error-text">Enter a valid email address.</div>
         </div>
@@ -80,7 +73,7 @@ function userFormModal(existing){
     </div>
   `);
 
-  document.getElementById('save-user-btn').addEventListener('click', ()=>{
+  document.getElementById('save-user-btn').addEventListener('click', async ()=>{
     const fields = ['fullName','callName','department','role','email'];
     if(!isEdit) fields.push('password');
     let valid = true;
@@ -102,19 +95,26 @@ function userFormModal(existing){
       role: document.getElementById('role').value,
       email,
     };
-    if(isEdit){
-      STORE.users().update(existing.id, payload);
-      toast('User updated.', 'success');
-    } else {
-      payload.password = document.getElementById('password').value;
-      payload.status = 'Active';
-      payload.createdAt = STORE.nowISO();
-      payload.id = STORE.uid('user');
-      STORE.users().insert(payload);
-      toast('User created.', 'success');
+    const btn = document.getElementById('save-user-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try{
+      if(isEdit){
+        await STORE.users().update(existing.id, payload);
+        toast('User updated.', 'success');
+      } else {
+        payload.password = document.getElementById('password').value;
+        payload.status = 'Active';
+        payload.createdAt = STORE.nowISO();
+        payload.id = STORE.uid('user');
+        await STORE.users().insert(payload);
+        toast('User created.', 'success');
+      }
+      closeModal();
+      renderList();
+    } catch(err){
+      toast('Could not save user: ' + (err.message||err), 'error');
+      btn.disabled = false; btn.textContent = isEdit?'Save changes':'Create user';
     }
-    closeModal();
-    renderList();
   });
 }
 
@@ -134,20 +134,31 @@ function resetPasswordModal(u){
       <button class="btn btn-primary" id="confirm-reset-btn">Reset password</button>
     </div>
   `);
-  document.getElementById('confirm-reset-btn').addEventListener('click', ()=>{
+  document.getElementById('confirm-reset-btn').addEventListener('click', async ()=>{
     const val = document.getElementById('newpass').value;
     if(!val){ document.getElementById('f-newpass').classList.add('invalid'); return; }
-    STORE.users().update(u.id, { password: val });
-    toast('Password reset.', 'success');
-    closeModal();
+    const btn = document.getElementById('confirm-reset-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try{
+      await STORE.users().update(u.id, { password: val });
+      toast('Password reset.', 'success');
+      closeModal();
+    } catch(err){
+      toast('Could not reset password: ' + (err.message||err), 'error');
+      btn.disabled = false; btn.textContent = 'Reset password';
+    }
   });
 }
 
-function toggleStatus(u){
+async function toggleStatus(u){
   const next = u.status === 'Active' ? 'Inactive' : 'Active';
-  STORE.users().update(u.id, { status: next });
-  toast(`User ${next==='Active'?'reactivated':'deactivated'}.`, 'success');
-  renderList();
+  try{
+    await STORE.users().update(u.id, { status: next });
+    toast(`User ${next==='Active'?'reactivated':'deactivated'}.`, 'success');
+    renderList();
+  } catch(err){
+    toast('Could not update status: ' + (err.message||err), 'error');
+  }
 }
 
 function deleteUser(u){
@@ -155,7 +166,15 @@ function deleteUser(u){
   confirmAction({
     title:'Delete this user?', message:`${u.fullName} will lose access immediately. Ideas they authored remain in the system.`,
     confirmLabel:'Delete', danger:true,
-    onConfirm: ()=>{ STORE.users().remove(u.id); toast('User deleted.', 'success'); renderList(); }
+    onConfirm: async ()=>{
+      try{
+        await STORE.users().remove(u.id);
+        toast('User deleted.', 'success');
+        renderList();
+      } catch(err){
+        toast('Could not delete user: ' + (err.message||err), 'error');
+      }
+    }
   });
 }
 
@@ -193,10 +212,16 @@ function renderList(){
   `;
 }
 
-if(currentUser){
+bootPage(async ()=>{
+  currentUser = AUTH.guardRole(['role_admin']);
+  if(!currentUser) return;
+  renderShell({
+    activePage:'admin.html', eyebrow:'Administration', title:'User Administration',
+    topbarActionsHtml: `<button class="btn btn-primary" id="new-user-btn">+ New user</button>`
+  });
   renderList();
   document.getElementById('new-user-btn').addEventListener('click', ()=> userFormModal(null));
-}
+});
 </script>
 </body>
 </html>

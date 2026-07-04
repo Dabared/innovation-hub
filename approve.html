@@ -9,18 +9,13 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<script src="js/remoteApi.js"></script>
 <script src="js/store.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/app.js"></script>
-<script>
-const currentUser = AUTH.guardRole(['role_admin','role_committee']);
-if(currentUser){
-  renderShell({ activePage:'approve.html', eyebrow:'Innovation Committee', title:'Review & Approve Ideas' });
-}
-</script>
-
 
 <script>
+let currentUser = null;
 let tab = 'Submitted';
 
 function tabsHtml(){
@@ -100,20 +95,27 @@ function renderList(){
   document.getElementById('tabs-mount').innerHTML = tabsHtml();
 }
 
-function decide(ideaId, decision){
+async function decide(ideaId, decision){
   const comment = document.getElementById('comment-'+ideaId).value.trim();
   if(!comment){ toast('Add a comment explaining your decision.', 'error'); return; }
-  STORE.approvals().insert({ ideaId, committeeUserId: currentUser.id, decision, comment, createdAt: STORE.nowISO() });
-  STORE.comments().insert({ ideaId, userId: currentUser.id, text: `[${decision}] ${comment}`, createdAt: STORE.nowISO(), context:'approval' });
-  STORE.ideas().update(ideaId, { status: decision, updatedAt: STORE.nowISO() });
-  toast(`Idea marked as ${decision}.`, 'success');
-  renderList();
+  try{
+    await STORE.approvals().insert({ ideaId, committeeUserId: currentUser.id, decision, comment, createdAt: STORE.nowISO() });
+    await STORE.comments().insert({ ideaId, userId: currentUser.id, text: `[${decision}] ${comment}`, createdAt: STORE.nowISO(), context:'approval' });
+    await STORE.ideas().update(ideaId, { status: decision, updatedAt: STORE.nowISO() });
+    toast(`Idea marked as ${decision}.`, 'success');
+    renderList();
+  } catch(err){
+    toast('Could not save decision: ' + (err.message||err), 'error');
+  }
 }
 
-if(currentUser){
+bootPage(async ()=>{
+  currentUser = AUTH.guardRole(['role_admin','role_committee']);
+  if(!currentUser) return;
+  renderShell({ activePage:'approve.html', eyebrow:'Innovation Committee', title:'Review & Approve Ideas' });
   document.getElementById('content-mount').innerHTML = `<div id="tabs-mount"></div><div id="list-mount"></div>`;
   renderList();
-}
+});
 </script>
 </body>
 </html>

@@ -9,24 +9,19 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<script src="js/remoteApi.js"></script>
 <script src="js/store.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/app.js"></script>
-<script>
-const currentUser = AUTH.guardRole(['role_admin']);
-if(currentUser){
-  renderShell({ activePage:'maintenance.html', eyebrow:'Administration', title:'System Maintenance' });
-}
-</script>
-
 
 <script>
+let currentUser = null;
 let mTab = 'departments';
 
 const CONFIG = {
-  departments: { table: STORE.departments, label:'Department', plural:'Departments', usedBy: (id)=> STORE.users().where(u=>u.department===id).length + STORE.ideas().where(i=>i.department===id).length },
-  roles:       { table: STORE.roles,       label:'Role',       plural:'User Roles',   usedBy: (id)=> STORE.users().where(u=>u.role===id).length, hasDescription: true },
-  categories:  { table: STORE.categories,  label:'Category',   plural:'Idea Categories', usedBy: (id)=> STORE.ideas().where(i=>i.categoryId===id).length },
+  departments: { table: () => STORE.departments(), label:'Department', plural:'Departments', usedBy: (id)=> STORE.users().where(u=>u.department===id).length + STORE.ideas().where(i=>i.department===id).length },
+  roles:       { table: () => STORE.roles(),       label:'Role',       plural:'User Roles',   usedBy: (id)=> STORE.users().where(u=>u.role===id).length, hasDescription: true },
+  categories:  { table: () => STORE.categories(),  label:'Category',   plural:'Idea Categories', usedBy: (id)=> STORE.ideas().where(i=>i.categoryId===id).length },
 };
 
 function switchTab(t){ mTab = t; renderPage(); }
@@ -95,15 +90,22 @@ function formModal(existing){
       <button class="btn btn-primary" id="save-item-btn">${isEdit?'Save changes':'Add '+cfg.label.toLowerCase()}</button>
     </div>
   `);
-  document.getElementById('save-item-btn').addEventListener('click', ()=>{
+  document.getElementById('save-item-btn').addEventListener('click', async ()=>{
     const name = document.getElementById('item-name').value.trim();
     if(!name){ document.getElementById('f-name').classList.add('invalid'); return; }
     const payload = { name };
     if(cfg.hasDescription) payload.description = document.getElementById('item-desc').value.trim();
-    if(isEdit){ cfg.table().update(existing.id, payload); toast('Updated.', 'success'); }
-    else { payload.id = STORE.uid(mTab.slice(0,4)); cfg.table().insert(payload); toast('Added.', 'success'); }
-    closeModal();
-    renderList();
+    const btn = document.getElementById('save-item-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try{
+      if(isEdit){ await cfg.table().update(existing.id, payload); toast('Updated.', 'success'); }
+      else { payload.id = STORE.uid(mTab.slice(0,4)); await cfg.table().insert(payload); toast('Added.', 'success'); }
+      closeModal();
+      renderList();
+    } catch(err){
+      toast('Could not save: ' + (err.message||err), 'error');
+      btn.disabled = false; btn.textContent = isEdit?'Save changes':'Add '+cfg.label.toLowerCase();
+    }
   });
 }
 
@@ -115,11 +117,24 @@ function removeItem(id, usedCount){
   }
   confirmAction({
     title:`Delete this ${cfg.label.toLowerCase()}?`, message:'This cannot be undone.', confirmLabel:'Delete', danger:true,
-    onConfirm: ()=>{ cfg.table().remove(id); toast('Deleted.', 'success'); renderList(); }
+    onConfirm: async ()=>{
+      try{
+        await cfg.table().remove(id);
+        toast('Deleted.', 'success');
+        renderList();
+      } catch(err){
+        toast('Could not delete: ' + (err.message||err), 'error');
+      }
+    }
   });
 }
 
-if(currentUser) renderPage();
+bootPage(async ()=>{
+  currentUser = AUTH.guardRole(['role_admin']);
+  if(!currentUser) return;
+  renderShell({ activePage:'maintenance.html', eyebrow:'Administration', title:'System Maintenance' });
+  renderPage();
+});
 </script>
 </body>
 </html>

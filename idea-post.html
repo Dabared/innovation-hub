@@ -9,15 +9,13 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<script src="js/remoteApi.js"></script>
 <script src="js/store.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/app.js"></script>
-<script>
-const user = renderShell({ activePage:'idea-post.html', eyebrow:'Contribute', title:'Post an Innovation Idea' });
-</script>
-
 
 <script>
+let user = null;
 let editingId = null;
 
 function categoryOptions(selected){
@@ -105,8 +103,8 @@ function renderPage(){
     </div>
   `;
 
-  document.getElementById('idea-form').addEventListener('submit', (e)=>{ e.preventDefault(); saveIdea('Submitted'); });
-  document.getElementById('draft-btn').addEventListener('click', ()=> saveIdea('Draft'));
+  document.getElementById('idea-form').addEventListener('submit', async (e)=>{ e.preventDefault(); await saveIdea('Submitted'); });
+  document.getElementById('draft-btn').addEventListener('click', async ()=>{ await saveIdea('Draft'); });
   document.getElementById('delete-btn').addEventListener('click', ()=>{ if(editingId) deleteIdea(editingId); });
   document.getElementById('file-drop').addEventListener('click', ()=> document.getElementById('file-input').click());
   document.getElementById('file-input').addEventListener('change', (e)=>{
@@ -139,7 +137,7 @@ function validate(){
   return valid ? vals : null;
 }
 
-function saveIdea(status){
+async function saveIdea(status){
   // Draft only requires a title so users can save partial work.
   let vals;
   if(status === 'Draft'){
@@ -166,16 +164,23 @@ function saveIdea(status){
     status, updatedAt: STORE.nowISO(),
   };
 
-  if(editingId){
-    STORE.ideas().update(editingId, payload);
-    toast(status==='Draft' ? 'Draft updated.' : 'Idea posted.', 'success');
-  } else {
-    payload.id = STORE.uid('idea'); payload.createdAt = STORE.nowISO();
-    STORE.ideas().insert(payload);
-    toast(status==='Draft' ? 'Draft saved.' : 'Idea posted to the feed.', 'success');
+  const submitBtns = document.querySelectorAll('#idea-form button');
+  submitBtns.forEach(b=>b.disabled = true);
+  try{
+    if(editingId){
+      await STORE.ideas().update(editingId, payload);
+      toast(status==='Draft' ? 'Draft updated.' : 'Idea posted.', 'success');
+    } else {
+      payload.id = STORE.uid('idea'); payload.createdAt = STORE.nowISO();
+      await STORE.ideas().insert(payload);
+      toast(status==='Draft' ? 'Draft saved.' : 'Idea posted to the feed.', 'success');
+    }
+    resetForm();
+    renderPage();
+  } catch(err){
+    toast('Could not save to Google Sheets: ' + (err.message||err), 'error');
+    submitBtns.forEach(b=>b.disabled = false);
   }
-  resetForm();
-  renderPage();
 }
 
 function loadIdea(id){
@@ -202,14 +207,21 @@ function deleteIdea(id){
     title: 'Delete this idea?',
     message: `“${idea.title}” will be permanently removed${idea.status!=='Draft' ? ', including its comments, ratings and reactions' : ''}. This can't be undone.`,
     confirmLabel: 'Delete', danger: true,
-    onConfirm: ()=>{
-      STORE.ideas().remove(id);
-      STORE.comments().where(c=>c.ideaId===id).forEach(c=>STORE.comments().remove(c.id));
-      STORE.ratings().where(r=>r.ideaId===id).forEach(r=>STORE.ratings().remove(r.id));
-      STORE.reactions().where(r=>r.ideaId===id).forEach(r=>STORE.reactions().remove(r.id));
-      if(editingId===id) resetForm();
-      toast('Idea deleted.', 'success');
-      renderPage();
+    onConfirm: async ()=>{
+      try{
+        await STORE.ideas().remove(id);
+        const relComments = STORE.comments().where(c=>c.ideaId===id);
+        const relRatings = STORE.ratings().where(r=>r.ideaId===id);
+        const relReactions = STORE.reactions().where(r=>r.ideaId===id);
+        for(const c of relComments) await STORE.comments().remove(c.id);
+        for(const r of relRatings) await STORE.ratings().remove(r.id);
+        for(const r of relReactions) await STORE.reactions().remove(r.id);
+        if(editingId===id) resetForm();
+        toast('Idea deleted.', 'success');
+        renderPage();
+      } catch(err){
+        toast('Could not delete: ' + (err.message||err), 'error');
+      }
     }
   });
 }
@@ -224,7 +236,11 @@ function resetForm(){
   const ft = document.getElementById('form-title'); if(ft) ft.textContent = 'New idea';
 }
 
-renderPage();
+bootPage(async ()=>{
+  user = renderShell({ activePage:'idea-post.html', eyebrow:'Contribute', title:'Post an Innovation Idea' });
+  if(!user) return;
+  renderPage();
+});
 </script>
 </body>
 </html>
